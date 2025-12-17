@@ -47,7 +47,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 try {
-    $Suffix = "$env:USERNAME-$Partition-$Sequence"
+    # Sanitize partition name for Azure resource naming (replace spaces with hyphens)
+    $PartitionSanitized = $Partition -replace '\s+', '-'
+    
+    $Suffix = "$env:USERNAME-$PartitionSanitized-$Sequence"
     $ResourceGroup = "sentinel-rg-$Suffix"
     $TemplatePath = "$PSScriptRoot/AzDeploy.Bicep/SecurityInsights/sentinel-complete.bicep"
 
