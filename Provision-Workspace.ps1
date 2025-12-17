@@ -66,12 +66,31 @@ try {
     Write-Host ""
 
     Write-Host "Creating Resource Group $ResourceGroup in $Location..." -ForegroundColor Cyan
-    $rg = az group create --name $ResourceGroup --location $Location 2>&1 | ConvertFrom-Json
+    
+    $rawOutput = az group create --name $ResourceGroup --location $Location 2>&1
+    
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to create resource group with exit code $LASTEXITCODE"
+        # Check if it's an authorization error
+        if ($rawOutput -match "AuthorizationFailed") {
+            Write-Host ""
+            Write-Host "Authorization Error Details:" -ForegroundColor Red
+            Write-Host $rawOutput -ForegroundColor Red
+            Write-Host ""
+            throw "Authorization failed: You lack permissions to create resource groups. Please ask your administrator to create resource group '$ResourceGroup' or grant you 'Contributor' role on the subscription. See error details above."
+        }
+        else {
+            throw "Failed to create resource group: $rawOutput"
+        }
     }
-
-    Write-Host "OK $($rg.id)" -ForegroundColor Green
+    
+    # Parse the JSON output
+    try {
+        $rg = $rawOutput | ConvertFrom-Json
+        Write-Host "OK $($rg.id)" -ForegroundColor Green
+    }
+    catch {
+        throw "Failed to parse Azure CLI output as JSON: $rawOutput"
+    }
     Write-Host ""
 
     Write-Host "Creating Sentinel Workspace in $ResourceGroup..." -ForegroundColor Cyan
