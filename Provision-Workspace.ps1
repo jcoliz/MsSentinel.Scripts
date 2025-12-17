@@ -1,41 +1,106 @@
+<#
+.SYNOPSIS
+Provisions a Microsoft Sentinel workspace with Log Analytics in Azure.
+
+.DESCRIPTION
+This script creates a new resource group and deploys a complete Microsoft Sentinel
+workspace with associated Log Analytics workspace. The resources are named using a
+combination of username, partition, and sequence number for uniqueness.
+
+.PARAMETER Partition
+The partition identifier for resource naming (e.g., 'dev', 'test', 'prod').
+
+.PARAMETER Sequence
+The sequence number for resource naming, allowing multiple instances (e.g., '01', '02').
+
+.PARAMETER Location
+The Azure region where resources will be created (e.g., 'eastus', 'westus2').
+
+.EXAMPLE
+.\Provision-Workspace.ps1 -Partition dev -Sequence 01 -Location eastus
+Provisions a Sentinel workspace in the East US region with dev-01 naming.
+
+.EXAMPLE
+.\Provision-Workspace.ps1 -Partition test -Sequence 02 -Location westus2
+Provisions a Sentinel workspace in the West US 2 region with test-02 naming.
+
+.NOTES
+Requires Azure CLI to be installed and authenticated (az login).
+Uses Bicep template from AzDeploy.Bicep/SecurityInsights/sentinel-complete.bicep.
+#>
+
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)]
     [string]
     $Partition,
+
     [Parameter(Mandatory=$true)]
     [string]
     $Sequence,
+
     [Parameter(Mandatory=$true)]
     [string]
     $Location
 )
+
 $ErrorActionPreference = "Stop"
 
-$Suffix = "$env:USERNAME-$Partition-$Sequence"
-$ResourceGroup = "sentinel-rg-$Suffix"
+try {
+    $Suffix = "$env:USERNAME-$Partition-$Sequence"
+    $ResourceGroup = "sentinel-rg-$Suffix"
+    $TemplatePath = "$PSScriptRoot/AzDeploy.Bicep/SecurityInsights/sentinel-complete.bicep"
 
-Write-Output "Checking Azure Subscription"
-$account = az account show | ConvertFrom-Json
+    # Verify Bicep template exists
+    if (-not (Test-Path $TemplatePath)) {
+        throw "Bicep template not found: $TemplatePath"
+    }
 
-Write-Output "OK TN=$($account.homeTenantId) SU=$($account.id) $($account.name)"
-Write-Output ""
+    Write-Host "Checking Azure Subscription..." -ForegroundColor Cyan
+    $account = az account show 2>&1 | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to get Azure account information. Please run 'az login' first."
+    }
 
-Write-Output "Creating Resource Group $ResourceGroup in $Location"
-$rg = az group create --name $ResourceGroup --location $Location | ConvertFrom-Json
+    Write-Host "OK TN=$($account.homeTenantId) SU=$($account.id) $($account.name)" -ForegroundColor Green
+    Write-Host ""
 
-Write-Output "OK $($rg.id)"
-Write-Output ""
+    Write-Host "Creating Resource Group $ResourceGroup in $Location..." -ForegroundColor Cyan
+    $rg = az group create --name $ResourceGroup --location $Location 2>&1 | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create resource group with exit code $LASTEXITCODE"
+    }
 
-Write-Output "Creating Sentinel Workspace in $ResourceGroup"
-$sentinel = az deployment group create --name "Deploy-$(Get-Random)" --resource-group $ResourceGroup --template-file .\AzDeploy.Bicep\SecurityInsights\sentinel-complete.bicep --parameter suffix=$Suffix | ConvertFrom-Json
+    Write-Host "OK $($rg.id)" -ForegroundColor Green
+    Write-Host ""
 
-$workspaceName = $sentinel.properties.outputs.logAnalyticsName.value
-$workspaceId = $sentinel.properties.outputs.logAnalyticsWorkspaceId.value
+    Write-Host "Creating Sentinel Workspace in $ResourceGroup..." -ForegroundColor Cyan
+    $deploymentName = "Deploy-$(Get-Random)"
+    $sentinel = az deployment group create `
+        --name $deploymentName `
+        --resource-group $ResourceGroup `
+        --template-file $TemplatePath `
+        --parameter suffix=$Suffix 2>&1 | ConvertFrom-Json
+    
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to deploy Sentinel workspace with exit code $LASTEXITCODE"
+    }
 
-Write-Output "OK $workspaceName ID: $workspaceId"
-Write-Output ""
+    $workspaceName = $sentinel.properties.outputs.logAnalyticsName.value
+    $workspaceId = $sentinel.properties.outputs.logAnalyticsWorkspaceId.value
 
-Write-Output "TN $($account.homeTenantId)"
-Write-Output "SU $($account.id) $($account.name)"
-Write-Output "RG: $ResourceGroup in $Location"
-Write-Output "LA: $workspaceName ID: $workspaceId"
+    Write-Host "OK $workspaceName ID: $workspaceId" -ForegroundColor Green
+    Write-Host ""
+
+    Write-Host "Deployment Summary:" -ForegroundColor Cyan
+    Write-Host "  Tenant:              $($account.homeTenantId)"
+    Write-Host "  Subscription:        $($account.id) - $($account.name)"
+    Write-Host "  Resource Group:      $ResourceGroup in $Location"
+    Write-Host "  Log Analytics Name:  $workspaceName"
+    Write-Host "  Workspace ID:        $workspaceId"
+}
+catch {
+    Write-Error "Failed to provision workspace: $_"
+    Write-Error $_.ScriptStackTrace
+    exit 1
+}
