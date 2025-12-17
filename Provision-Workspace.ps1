@@ -95,23 +95,54 @@ try {
 
     Write-Host "Creating Sentinel Workspace in $ResourceGroup..." -ForegroundColor Cyan
     $deploymentName = "Deploy-$(Get-Random)"
-    $sentinel = az deployment group create `
+    
+    # Capture raw output
+    $rawDeployOutput = az deployment group create `
         --name $deploymentName `
         --resource-group $ResourceGroup `
         --template-file $TemplatePath `
-        --parameter suffix=$Suffix 2>&1 | ConvertFrom-Json
+        --parameter suffix=$Suffix 2>&1
     
     if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "Deployment Failed - Raw Output:" -ForegroundColor Red
+        Write-Host $rawDeployOutput -ForegroundColor Red
+        Write-Host ""
         throw "Failed to deploy Sentinel workspace with exit code $LASTEXITCODE"
+    }
+    
+    # Convert output to string (handles ErrorRecord objects from 2>&1)
+    $outputString = $rawDeployOutput | Out-String
+    
+    # Extract JSON from output (strip any WARNING or other prefix messages)
+    # Find the first '{' which marks the start of JSON
+    $jsonStart = $outputString.IndexOf('{')
+    if ($jsonStart -lt 0) {
+        throw "No JSON found in deployment output"
+    }
+    
+    $jsonOutput = $outputString.Substring($jsonStart)
+    
+    # Parse the JSON
+    try {
+        $sentinel = $jsonOutput | ConvertFrom-Json
+    }
+    catch {
+        Write-Host ""
+        Write-Host "JSON Parse Error - Extracted JSON:" -ForegroundColor Red
+        Write-Host $jsonOutput -ForegroundColor Red
+        Write-Host ""
+        throw "Failed to parse deployment output as JSON: $_"
     }
 
     $workspaceName = $sentinel.properties.outputs.logAnalyticsName.value
     $workspaceId = $sentinel.properties.outputs.logAnalyticsWorkspaceId.value
+    $duration = $sentinel.properties.duration
 
-    Write-Host "OK $workspaceName ID: $workspaceId" -ForegroundColor Green
+    Write-Host "OK $workspaceName ID: $workspaceId Duration: $duration" -ForegroundColor Green
     Write-Host ""
 
-    Write-Host "Deployment Summary:" -ForegroundColor Cyan
+    Write-Host "$Partition:" -ForegroundColor Cyan
     Write-Host "  Tenant:              $($account.homeTenantId)"
     Write-Host "  Subscription:        $($account.id) - $($account.name)"
     Write-Host "  Resource Group:      $ResourceGroup in $Location"
