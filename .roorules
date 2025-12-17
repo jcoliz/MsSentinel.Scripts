@@ -1,5 +1,22 @@
 # Project Rules for MsSentinel.Scripts
 
+## Commit Messages
+
+When completing tasks that modify files, always include a commit message following Conventional Commits format:
+- Start with type: `fix:`, `feat:`, `refactor:`, `docs:`, `chore:`, `test:`, `style:`, `perf:`, `ci:`, or `build:`
+- Keep total message under 100 words
+- Use imperative mood ("add feature" not "added feature")
+- Start first line with lower-case letter
+- Be specific and actionable
+
+Example:
+```
+fix: Sanitize partition names for Azure resource group naming
+
+Replace spaces with hyphens to comply with Azure naming restrictions.
+Fixes InvalidResourceGroup error when partition contains spaces.
+```
+
 ## PowerShell Script Pattern
 
 **Follow these conventions when creating PowerShell scripts for this project.**
