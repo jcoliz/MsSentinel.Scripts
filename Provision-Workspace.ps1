@@ -142,7 +142,7 @@ try {
     Write-Host "OK $workspaceName ID: $workspaceId Duration: $duration" -ForegroundColor Green
     Write-Host ""
 
-    Write-Host "$Partition:" -ForegroundColor Cyan
+    Write-Host "${Partition}:" -ForegroundColor Cyan
     Write-Host "  Tenant:              $($account.homeTenantId)"
     Write-Host "  Subscription:        $($account.id) - $($account.name)"
     Write-Host "  Resource Group:      $ResourceGroup in $Location"
