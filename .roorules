@@ -1,0 +1,224 @@
+# Project Rules for MsSentinel.Scripts
+
+## PowerShell Script Pattern
+
+**Follow these conventions when creating PowerShell scripts for this project.**
+
+1. **Comment-Based Help** - All scripts must include comprehensive comment-based help at the top with the following sections:
+   - `.SYNOPSIS` - Brief one-line description of what the script does
+   - `.DESCRIPTION` - Detailed explanation of the script's functionality and purpose
+   - `.PARAMETER` - Document each parameter with its purpose (if the script has parameters)
+   - `.EXAMPLE` - Provide at least one usage example; include multiple examples for complex scripts
+   - `.NOTES` - Include any prerequisites, dependencies, or important information
+   - `.LINK` - Include relevant documentation links (optional but recommended)
+
+2. **CmdletBinding** - Always use `[CmdletBinding()]` to enable cmdlet features and better error handling.
+
+3. **Parameter Validation** - Use PowerShell validation attributes for parameters:
+   - `[ValidateSet()]` for enumerated values
+   - `[Parameter()]` to mark parameters as required or optional
+   - Provide sensible defaults where appropriate
+
+4. **Error Handling** - Set `$ErrorActionPreference = "Stop"` at the script start and wrap main logic in try/catch/finally:
+   ```powershell
+   $ErrorActionPreference = "Stop"
+
+   try {
+       # Main script logic
+   }
+   catch {
+       Write-Error "Failed to [action]: $_"
+       Write-Error $_.ScriptStackTrace
+       exit 1
+   }
+   finally {
+       # Cleanup (e.g., Pop-Location)
+   }
+   ```
+
+5. **PSScriptRoot for Path Resolution** - Always use `$PSScriptRoot` for path resolution to allow scripts to run from any directory:
+   - Use `$PSScriptRoot/..` to reference the repository root
+   - Use `$PSScriptRoot/AzDeploy.Bicep` to reference Bicep templates
+   - Store the repository root in a variable if used multiple times: `$repoRoot = Split-Path $PSScriptRoot -Parent`
+
+6. **Location Management** - Use `Push-Location`/`Pop-Location` for directory changes:
+   - Always use `try/finally` to ensure `Pop-Location` is called even on errors
+   - Prefer `Push-Location` over `cd` or `Set-Location` for proper cleanup
+
+7. **Colored Output** - Use Write-Host with colors for better user experience:
+   - **Cyan** (`-ForegroundColor Cyan`) - For informational messages and section headers
+   - **Green** (`-ForegroundColor Green`) - For success messages (e.g., "OK Build succeeded")
+   - **Yellow** (`-ForegroundColor Yellow`) - For warnings (e.g., "WARNING Some tests failed")
+   - **Red** (`-ForegroundColor Red`) - For errors (only via Write-Error, which is already red)
+
+8. **Exit Code Handling** - Check `$LASTEXITCODE` after external commands and throw errors on failure:
+   ```powershell
+   az group create --name $ResourceGroup --location $Location 2>&1 | ConvertFrom-Json
+   if ($LASTEXITCODE -ne 0) {
+       throw "Failed to create resource group with exit code $LASTEXITCODE"
+   }
+   ```
+
+9. **Naming Convention** - Use PascalCase with verb-noun format for script names:
+   - Use approved PowerShell verbs: Get-, Set-, New-, Remove-, Start-, Stop-, Build-, Run-, Deploy-, Provision-, etc.
+   - Examples: `Provision-Workspace.ps1`, `Deploy-Solution.ps1`
+
+10. **Helper Functions** - Define reusable helper functions within scripts when needed:
+    - Use PascalCase for function names with verb-noun format
+    - Place helper functions before the main script logic
+    - Document functions with comment-based help if they're complex
+
+11. **Script Organization** - Structure scripts in this order:
+    1. Comment-based help block
+    2. `[CmdletBinding()]` and parameters
+    3. `$ErrorActionPreference = "Stop"`
+    4. Helper functions (if any)
+    5. Main logic in try/catch/finally
+
+12. **Azure CLI Commands** - When working with Azure CLI:
+    - Always redirect stderr to stdout: `az command 2>&1`
+    - Check `$LASTEXITCODE` after each command
+    - Provide helpful error messages that guide users (e.g., "Please run 'az login' first")
+    - Use `ConvertFrom-Json` to parse JSON output into PowerShell objects
+
+13. **File Path Validation** - Validate that required files exist before using them:
+    ```powershell
+    if (-not (Test-Path $TemplatePath)) {
+        throw "Bicep template not found: $TemplatePath"
+    }
+    ```
+
+### Example: Minimal Script Pattern
+
+```powershell
+<#
+.SYNOPSIS
+Provisions Azure resources using Bicep templates.
+
+.DESCRIPTION
+This script creates Azure resources by deploying Bicep templates. It validates
+prerequisites and provides detailed feedback during the deployment process.
+
+.PARAMETER ResourceGroup
+The name of the Azure resource group to create or use.
+
+.PARAMETER Location
+The Azure region where resources will be created (e.g., 'eastus', 'westus2').
+
+.EXAMPLE
+.\Deploy-Resources.ps1 -ResourceGroup my-rg -Location eastus
+Deploys resources to a new resource group in East US.
+
+.NOTES
+Requires Azure CLI to be installed and authenticated (az login).
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory=$true)]
+    [string]
+    $ResourceGroup,
+
+    [Parameter(Mandatory=$true)]
+    [string]
+    $Location
+)
+
+$ErrorActionPreference = "Stop"
+
+try {
+    Write-Host "Checking Azure Subscription..." -ForegroundColor Cyan
+    $account = az account show 2>&1 | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to get Azure account. Please run 'az login' first."
+    }
+    Write-Host "OK Subscription: $($account.name)" -ForegroundColor Green
+
+    Write-Host "Creating Resource Group $ResourceGroup..." -ForegroundColor Cyan
+    $rg = az group create --name $ResourceGroup --location $Location 2>&1 | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create resource group with exit code $LASTEXITCODE"
+    }
+    Write-Host "OK $($rg.id)" -ForegroundColor Green
+}
+catch {
+    Write-Error "Failed to deploy resources: $_"
+    Write-Error $_.ScriptStackTrace
+    exit 1
+}
+```
+
+### Example: Script with Parameters and Validation
+
+```powershell
+<#
+.SYNOPSIS
+Deploys a solution with configurable options.
+
+.DESCRIPTION
+This script deploys an Azure solution with validation and error handling.
+Supports multiple deployment modes and validates prerequisites.
+
+.PARAMETER Mode
+The deployment mode. Valid values: Development, Production.
+
+.PARAMETER SkipValidation
+When specified, skips pre-deployment validation checks.
+
+.EXAMPLE
+.\Deploy-Solution.ps1 -Mode Development
+Deploys in development mode with validation.
+
+.EXAMPLE
+.\Deploy-Solution.ps1 -Mode Production -SkipValidation
+Deploys in production mode without validation checks.
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory=$true)]
+    [ValidateSet("Development", "Production")]
+    [string]
+    $Mode,
+
+    [Parameter()]
+    [switch]
+    $SkipValidation
+)
+
+$ErrorActionPreference = "Stop"
+
+try {
+    $TemplatePath = "$PSScriptRoot/template.bicep"
+
+    if (-not (Test-Path $TemplatePath)) {
+        throw "Template not found: $TemplatePath"
+    }
+
+    Write-Host "Deploying in $Mode mode..." -ForegroundColor Cyan
+
+    if (-not $SkipValidation) {
+        Write-Host "Running validation..." -ForegroundColor Cyan
+        # Validation logic here
+        Write-Host "OK Validation passed" -ForegroundColor Green
+    }
+
+    # Deployment logic here
+    Write-Host "OK Deployment completed successfully" -ForegroundColor Green
+}
+catch {
+    Write-Error "Failed to deploy: $_"
+    Write-Error $_.ScriptStackTrace
+    exit 1
+}
+```
+
+### Key Benefits
+
+- **Consistency** - All scripts follow the same structure and conventions
+- **Portability** - Scripts run from any directory using `$PSScriptRoot`
+- **Reliability** - Comprehensive error handling with proper cleanup
+- **Usability** - Clear help documentation and colored output for better UX
+- **Maintainability** - Well-organized code with proper documentation
+
+**Reference Examples:** See [`Provision-Workspace.ps1`](Provision-Workspace.ps1) and [`Deploy-Solution.ps1`](Deploy-Solution.ps1) for production implementations.
