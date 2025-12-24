@@ -23,6 +23,7 @@ The sequence number for resource naming, allowing multiple instances (e.g., '01'
 
 .PARAMETER Location
 The Azure region where resources will be created (e.g., 'eastus', 'westus2').
+Can be set as default in settings.psd1 to avoid typing on every invocation.
 
 .EXAMPLE
 .\Deploy-Complete.ps1 -Partition dev -Sequence 01 -Location eastus
@@ -56,10 +57,41 @@ param(
     [string]
     $Sequence,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$false)]
     [string]
     $Location
 )
+
+# Load settings from settings.psd1 if it exists
+$settingsPath = "$PSScriptRoot\settings.psd1"
+$defaultLocation = $null
+$defaultTemplateRoot = $null
+
+if (Test-Path $settingsPath) {
+    $settings = Import-PowerShellDataFile -Path $settingsPath
+    if ($settings.Location) {
+        $defaultLocation = $settings.Location
+    }
+    if ($settings.TemplateRoot) {
+        $defaultTemplateRoot = $settings.TemplateRoot
+    }
+}
+
+# Apply defaults if parameters not provided
+if (-not $Location) {
+    if ($defaultLocation) {
+        $Location = $defaultLocation
+        Write-Host "Using default location from settings: $Location" -ForegroundColor Cyan
+    }
+    else {
+        throw "Location parameter is required. Either provide -Location or create settings.psd1 with default Location. See settings.example.psd1 for template."
+    }
+}
+
+if (-not $PSBoundParameters.ContainsKey('TemplateRoot') -and $defaultTemplateRoot) {
+    $TemplateRoot = $defaultTemplateRoot
+    Write-Host "Using template root from settings: $TemplateRoot" -ForegroundColor Cyan
+}
 
 $ErrorActionPreference = "Stop"
 
