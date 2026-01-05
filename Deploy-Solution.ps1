@@ -119,6 +119,24 @@ try {
     Write-Host "OK TN=$($account.homeTenantId) SU=$($account.id) $($account.name)" -ForegroundColor Green
     Write-Host ""
 
+    Write-Host "Retrieving template commit information..." -ForegroundColor Cyan
+    Push-Location $ResolvedTemplateRoot
+    try {
+        $gitLog = git log --pretty=format:"%h %ad %s" --date=short -n 1 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $commitInfo = $gitLog
+            Write-Host "OK Commit: $commitInfo" -ForegroundColor Green
+        }
+        else {
+            $commitInfo = "Not available (not a git repository)"
+            Write-Host "WARNING $commitInfo" -ForegroundColor Yellow
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    Write-Host ""
+
     Write-Host "Deploying solution to Workspace $WorkspaceName in Resource Group $ResourceGroup..." -ForegroundColor Cyan
     $deploymentName = "Deploy-$(Get-Random)"
     az deployment group create `
@@ -143,6 +161,7 @@ try {
     Write-Host "  Location:            $Location"
     Write-Host "  Template Root:       $ResolvedTemplateRoot"
     Write-Host "  Template:            $TemplatePath"
+    Write-Host "  Commit:              $commitInfo"
 }
 catch {
     Write-Error "Failed to deploy solution: $_"
