@@ -25,6 +25,14 @@ Provision-Workspace.ps1 (e.g., '01', '02').
 The Azure region where the workspace is located (e.g., 'eastus', 'westus2').
 Can be set as default in settings.psd1 to avoid typing on every invocation.
 
+.PARAMETER ResourceGroup
+Optional name of an existing resource group to use. If not specified, the resource
+group name will be generated using the naming convention: sentinel-rg-{username}-{partition}-{sequence}
+
+.PARAMETER WorkspaceName
+Optional name of an existing workspace to use. If not specified, the workspace
+name will be generated using the naming convention: sentinel-{username}-{partition}-{sequence}
+
 .EXAMPLE
 .\Deploy-Solution.ps1 -Partition dev -Sequence 01 -Location eastus
 Deploys the solution from the default location (C:\GitHub\Azure-Sentinel\Solutions\dev\Package\mainTemplate.json)
@@ -37,6 +45,14 @@ Deploys the solution from C:\Templates\dev\Package\mainTemplate.json to the dev-
 .EXAMPLE
 .\Deploy-Solution.ps1 -TemplateRoot .\solutions -Partition test -Sequence 02 -Location westus2
 Deploys the solution from .\solutions\test\Package\mainTemplate.json to the test-02 workspace in West US 2.
+
+.EXAMPLE
+.\Deploy-Solution.ps1 -Partition prod -Sequence 01 -ResourceGroup my-existing-rg -Location eastus
+Deploys the solution to a specific resource group instead of using the generated name.
+
+.EXAMPLE
+.\Deploy-Solution.ps1 -Partition prod -Sequence 01 -ResourceGroup my-rg -WorkspaceName my-workspace -Location eastus
+Deploys the solution to a specific resource group and workspace instead of using generated names.
 
 .NOTES
 Requires Azure CLI to be installed and authenticated (az login).
@@ -60,7 +76,15 @@ param(
 
     [Parameter(Mandatory=$false)]
     [string]
-    $Location
+    $Location,
+
+    [Parameter(Mandatory=$false)]
+    [string]
+    $ResourceGroup,
+
+    [Parameter(Mandatory=$false)]
+    [string]
+    $WorkspaceName
 )
 
 # Load settings from settings.psd1 if it exists
@@ -97,9 +121,20 @@ if (-not $PSBoundParameters.ContainsKey('TemplateRoot') -and $defaultTemplateRoo
 $ErrorActionPreference = "Stop"
 
 try {
-    $Suffix = "$env:USERNAME-$Partition-$Sequence"
-    $ResourceGroup = "sentinel-rg-$Suffix"
-    $WorkspaceName = "sentinel-$Suffix"
+    # Sanitize partition name for Azure resource naming (replace spaces with hyphens)
+    $PartitionSanitized = $Partition -replace '\s+', '-'
+    
+    $Suffix = "$env:USERNAME-$PartitionSanitized-$Sequence"
+    
+    # Use provided resource group or generate name
+    if (-not $ResourceGroup) {
+        $ResourceGroup = "sentinel-rg-$Suffix"
+    }
+    
+    # Use provided workspace name or generate name
+    if (-not $WorkspaceName) {
+        $WorkspaceName = "sentinel-$Suffix"
+    }
     
     # Resolve template root to absolute path
     $ResolvedTemplateRoot = Resolve-Path $TemplateRoot -ErrorAction Stop
